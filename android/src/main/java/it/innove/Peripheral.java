@@ -665,7 +665,6 @@ public class Peripheral extends BluetoothGattCallback {
     // As a last resort, try and find ANY descriptor with this UUID, 
     // even if it doesn't have the correct properties
     return characteristic.getDescriptor(descriptorUUID);
-
   }
 
 
@@ -958,7 +957,7 @@ public class Peripheral extends BluetoothGattCallback {
 			int writePermission = BluetoothGattDescriptor.PERMISSION_WRITE;
 			List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();
 			for (BluetoothGattDescriptor descriptor : descriptors) {
-				if (((descriptor.getPermissions() & writeProperty) != 0) && 
+				if (((descriptor.getPermissions() & writePermission) != 0) && 
             descriptorUUID.equals(descriptor.getUuid())) {
 					return descriptor;
 				}
