@@ -20,6 +20,18 @@ class BleManager  {
     });
   }
 
+  read(peripheralId, serviceUUID, characteristicUUID, descriptorUUID) {
+    return new Promise((fulfill, reject) => {
+      bleManager.read(peripheralId, serviceUUID, characteristicUUID, descriptorUUID, (error, data) => {
+        if (error) {
+          reject(error);
+        } else {
+          fulfill(data);
+        }
+      });
+    });
+  }
+
   readRSSI(peripheralId) {
     return new Promise((fulfill, reject) => {
       bleManager.readRSSI(peripheralId, (error, rssi) => {
@@ -68,6 +80,24 @@ class BleManager  {
     }
     return new Promise((fulfill, reject) => {
       bleManager.writeWithoutResponse(peripheralId, serviceUUID, characteristicUUID, data, maxByteSize, queueSleepTime, (error) => {
+        if (error) {
+          reject(error);
+        } else {
+          fulfill();
+        }
+      });
+    });
+  }
+
+  write(peripheralId, serviceUUID, characteristicUUID, descriptorUUID, data, maxByteSize, queueSleepTime) {
+    if (maxByteSize == null) {
+      maxByteSize = 20;
+    }
+    if (queueSleepTime == null) {
+      queueSleepTime = 10;
+    }
+    return new Promise((fulfill, reject) => {
+      bleManager.write(peripheralId, serviceUUID, characteristicUUID, descriptorUUID, data, maxByteSize, queueSleepTime, (error) => {
         if (error) {
           reject(error);
         } else {
