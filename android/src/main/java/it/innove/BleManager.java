@@ -296,7 +296,7 @@ class BleManager extends ReactContextBaseJavaModule implements ActivityEventList
 	}
 
 	@ReactMethod
-	public void write(String deviceUUID, String serviceUUID, String characteristicUUID, String descriptorUUID, ReadableArray message, Integer maxByteSize, Integer queueSleepTime, Callback callback) {
+	public void writeDescriptor(String deviceUUID, String serviceUUID, String characteristicUUID, String descriptorUUID, ReadableArray message, Integer maxByteSize, Integer queueSleepTime, Callback callback) {
 		Log.d(LOG_TAG, "Write descriptor to: " + deviceUUID);
 
 		Peripheral peripheral = peripherals.get(deviceUUID);
@@ -306,7 +306,7 @@ class BleManager extends ReactContextBaseJavaModule implements ActivityEventList
 				decoded[i] = new Integer(message.getInt(i)).byteValue();
 			}
 			Log.d(LOG_TAG, "Message(" + decoded.length + "): " + bytesToHex(decoded));
-			peripheral.write(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID), UUIDHelper.uuidFromString(descriptorUUID), decoded, maxByteSize, queueSleepTime, callback);
+			peripheral.writeDescriptor(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID), UUIDHelper.uuidFromString(descriptorUUID), decoded, maxByteSize, queueSleepTime, callback);
 		} else
 			callback.invoke("Peripheral not found");
 	}
@@ -323,11 +323,11 @@ class BleManager extends ReactContextBaseJavaModule implements ActivityEventList
 	}
 
 	@ReactMethod
-	public void read(String deviceUUID, String serviceUUID, String characteristicUUID, String descriptorUUID, Callback callback) {
+	public void readDescriptor(String deviceUUID, String serviceUUID, String characteristicUUID, String descriptorUUID, Callback callback) {
 		Log.d(LOG_TAG, "Read descriptor from: " + deviceUUID);
 		Peripheral peripheral = peripherals.get(deviceUUID);
 		if (peripheral != null) {
-			peripheral.read(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID), UUIDHelper.uuidFromString(descriptorUUID), callback);
+			peripheral.readDescriptor(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID), UUIDHelper.uuidFromString(descriptorUUID), callback);
 		} else
 			callback.invoke("Peripheral not found", null);
 	}

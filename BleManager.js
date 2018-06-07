@@ -20,7 +20,7 @@ class BleManager  {
     });
   }
 
-  read(peripheralId, serviceUUID, characteristicUUID, descriptorUUID) {
+  readDescriptor(peripheralId, serviceUUID, characteristicUUID, descriptorUUID) {
     return new Promise((fulfill, reject) => {
       bleManager.read(peripheralId, serviceUUID, characteristicUUID, descriptorUUID, (error, data) => {
         if (error) {
@@ -89,7 +89,7 @@ class BleManager  {
     });
   }
 
-  write(peripheralId, serviceUUID, characteristicUUID, descriptorUUID, data, maxByteSize, queueSleepTime) {
+  writeDescriptor(peripheralId, serviceUUID, characteristicUUID, descriptorUUID, data, maxByteSize, queueSleepTime) {
     if (maxByteSize == null) {
       maxByteSize = 20;
     }
