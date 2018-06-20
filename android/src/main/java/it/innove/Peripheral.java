@@ -409,9 +409,11 @@ public class Peripheral extends BluetoothGattCallback {
     readDescriptorCallback = null;
   }
 
-	@Override
+    @Override
 	public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
 		super.onDescriptorWrite(gatt, descriptor, status);
+
+		Log.d(BleManager.LOG_TAG, "onDescriptorWrite: descriptor=" + descriptor.toString());
 
 		if (descriptor.getUuid() == UUIDHelper.uuidFromString(CHARACTERISTIC_NOTIFICATION_CONFIG)) {
 			if (registerNotifyCallback != null) {
@@ -421,6 +423,7 @@ public class Peripheral extends BluetoothGattCallback {
 					registerNotifyCallback.invoke("Error writing descriptor stats=" + status, null);
 				}
 				registerNotifyCallback = null;
+			}
 		}
 		else {
 			if (writeDescriptorCallback != null) {
@@ -432,6 +435,7 @@ public class Peripheral extends BluetoothGattCallback {
 				writeDescriptorCallback = null;
 			}
 		}
+		Log.d(BleManager.LOG_TAG, "onDescriptorWrite: END: descriptor=" + descriptor.toString());
 	}
 
 	@Override
@@ -685,17 +689,17 @@ public class Peripheral extends BluetoothGattCallback {
 		characteristic.setValue(data);
 
 		if (!gatt.writeCharacteristic(characteristic)) {
-			Log.d(BleManager.LOG_TAG, "Error on doWrite");
+			Log.d(BleManager.LOG_TAG, "Error on doWrite(characteristic)");
 			return false;
 		}
 		return true;
 	}
 
 	public boolean doWrite(BluetoothGattDescriptor descriptor, byte[] data) {
-    descriptor.setValue(data);
+    	descriptor.setValue(data);
 
 		if (!gatt.writeDescriptor(descriptor)) {
-			Log.d(BleManager.LOG_TAG, "Error on doWrite");
+			Log.d(BleManager.LOG_TAG, "Error on doWrite(descriptor)");
 			return false;
 		}
 		return true;
@@ -799,6 +803,9 @@ public class Peripheral extends BluetoothGattCallback {
 	}
 
   public void writeDescriptor(UUID serviceUUID, UUID characteristicUUID, UUID descriptorUUID, byte[] data, Integer maxByteSize, Integer queueSleepTime, Callback callback) {
+
+		Log.d(BleManager.LOG_TAG, "writeDescriptor: descriptorUUID=" + descriptorUUID.toString());
+
     if (!isConnected()) {
       callback.invoke("Device is not connected", null);
       return;
@@ -819,69 +826,64 @@ public class Peripheral extends BluetoothGattCallback {
 
     if (writeQueue.size() > 0) {
       callback.invoke("You have already an queued message");
+      return;
     }
 
     if (writeDescriptorCallback != null) {
-      callback.invoke("You're already writing");
+      callback.invoke("You're already writing descriptor");
+      return;
     }
 
-    if (writeQueue.size() == 0 && writeDescriptorCallback == null) {
+    writeDescriptorCallback = callback;
 
-      writeDescriptorCallback = callback;
+    if (data.length > maxByteSize) {
+		  int dataLength = data.length;
+		  int count = 0;
+		  byte[] firstMessage = null;
+		  List<byte[]> splittedMessage = new ArrayList<>();
 
-      if (data.length > maxByteSize) {
-        int dataLength = data.length;
-        int count = 0;
-        byte[] firstMessage = null;
-        List<byte[]> splittedMessage = new ArrayList<>();
+		  while (count < dataLength && (dataLength - count > maxByteSize)) {
+			  if (count == 0) {
+				  firstMessage = Arrays.copyOfRange(data, count, count + maxByteSize);
+			  } else {
+				  byte[] splitMessage = Arrays.copyOfRange(data, count, count + maxByteSize);
+				  splittedMessage.add(splitMessage);
+			  }
+			  count += maxByteSize;
+		  }
 
-        while (count < dataLength && (dataLength - count > maxByteSize)) {
-          if (count == 0) {
-            firstMessage = Arrays.copyOfRange(data, count, count + maxByteSize);
-          } else {
-            byte[] splitMessage = Arrays.copyOfRange(data, count, count + maxByteSize);
-            splittedMessage.add(splitMessage);
-          }
-          count += maxByteSize;
-        }
+		  if (count < dataLength) {
+			  // Other bytes in queue
+			  byte[] splitMessage = Arrays.copyOfRange(data, count, data.length);
+			  splittedMessage.add(splitMessage);
+		  }
 
-        if (count < dataLength) {
-          // Other bytes in queue
-          byte[] splitMessage = Arrays.copyOfRange(data, count, data.length);
-          splittedMessage.add(splitMessage);
-        }
-
-        try {
-          boolean writeError = false;
-          if (!doWrite(descriptor, firstMessage)) {
-            writeError = true;
-            callback.invoke("Write failed");
-          }
-          if (!writeError) {
-            Thread.sleep(queueSleepTime);
-            for (byte[] message : splittedMessage) {
-              if (!doWrite(descriptor, message)) {
-                writeError = true;
-                callback.invoke("Write failed");
-                break;
-              }
-              Thread.sleep(queueSleepTime);
-            }
-            if (!writeError) {
-              callback.invoke();
-            }
-          }
-        } catch (InterruptedException e) {
-          callback.invoke("Error during writing");
-        }
-      } else if (doWrite(descriptor, data)) {
-        Log.d(BleManager.LOG_TAG, "Write completed");
-        callback.invoke();
-      } else {
-        callback.invoke("Write failed");
-        writeDescriptorCallback = null;
-      }
+		  try {
+			  if (!doWrite(descriptor, firstMessage)) {
+				  callback.invoke("Write failed");
+				  writeDescriptorCallback = null;
+				  return;
+			  }
+			  Thread.sleep(queueSleepTime);
+			  for (byte[] message : splittedMessage) {
+				  if (!doWrite(descriptor, message)) {
+					  writeDescriptorCallback = null;
+					  callback.invoke("Write failed");
+					  return;
+				  }
+				  Thread.sleep(queueSleepTime);
+			  }
+		  } catch (InterruptedException e) {
+			  callback.invoke("Error during writing");
+			  writeDescriptorCallback = null;
+		  }
+		} else if (doWrite(descriptor, data)) {
+			Log.d(BleManager.LOG_TAG, "doWrite completed");
+    } else {
+			callback.invoke("Write failed");
+			writeDescriptorCallback = null;
     }
+		Log.d(BleManager.LOG_TAG, "writeDescriptor: END: descriptorUUID=" + descriptorUUID.toString());
   }
 
 	public void requestConnectionPriority(int connectionPriority, Callback callback) {
