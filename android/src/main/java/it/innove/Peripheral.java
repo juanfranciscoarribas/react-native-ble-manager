@@ -227,6 +227,9 @@ public class Peripheral extends BluetoothGattCallback {
 
 	static WritableMap byteArrayToWritableMap(byte[] bytes) throws JSONException {
 		WritableMap object = Arguments.createMap();
+        if (bytes == null || bytes.length == 0) {
+            return object;
+        }
 		object.putString("CDVType", "ArrayBuffer");
 		object.putString("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
 		object.putArray("bytes", BleManager.bytesToWritableArray(bytes));
