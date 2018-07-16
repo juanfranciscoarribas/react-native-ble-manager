@@ -11,9 +11,11 @@
     NSMutableDictionary *readRSSICallbacks;
     NSMutableDictionary *retrieveServicesCallbacks;
     NSMutableArray *writeQueue;
+    NSMutableArray *writeDescriptorQueue;
     NSMutableDictionary *notificationCallbacks;
     NSMutableDictionary *stopNotificationCallbacks;
-    NSMutableDictionary *retrieveServicesLatches;
+    //NSMutableDictionary *retrieveServicesLatches;
+    NSMutableDictionary *retrieveCharacteristicsLatches;
 }
 
 @property (strong, nonatomic) NSMutableSet *peripherals;
