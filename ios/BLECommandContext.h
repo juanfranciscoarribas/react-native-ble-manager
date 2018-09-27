@@ -6,5 +6,6 @@
 @property CBPeripheral *peripheral;
 @property CBService *service;
 @property CBCharacteristic *characteristic;
+@property CBDescriptor *descriptor;
 
 @end

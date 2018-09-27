@@ -52,6 +52,8 @@ public class Peripheral extends BluetoothGattCallback {
 	private Callback writeCallback;
 	private Callback registerNotifyCallback;
 	private Callback requestMTUCallback;
+	private Callback readDescriptorCallback;
+	private Callback writeDescriptorCallback;
 
 	private List<byte[]> writeQueue = new ArrayList<>();
 
@@ -225,6 +227,9 @@ public class Peripheral extends BluetoothGattCallback {
 
 	static WritableMap byteArrayToWritableMap(byte[] bytes) throws JSONException {
 		WritableMap object = Arguments.createMap();
+        if (bytes == null || bytes.length == 0) {
+            return object;
+        }
 		object.putString("CDVType", "ArrayBuffer");
 		object.putString("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
 		object.putArray("bytes", BleManager.bytesToWritableArray(bytes));
@@ -288,7 +293,7 @@ public class Peripheral extends BluetoothGattCallback {
 			}
 
 			sendConnectionEvent(device, "BleManagerDisconnectPeripheral");
-			List<Callback> callbacks = Arrays.asList(writeCallback, retrieveServicesCallback, readRSSICallback, readCallback, registerNotifyCallback, requestMTUCallback);
+			List<Callback> callbacks = Arrays.asList(writeCallback, writeDescriptorCallback, retrieveServicesCallback, readRSSICallback, readCallback, readDescriptorCallback, registerNotifyCallback, requestMTUCallback);
 			for (Callback currentCallback : callbacks) {
 				if (currentCallback != null) {
 					currentCallback.invoke("Device disconnected");
@@ -300,6 +305,8 @@ public class Peripheral extends BluetoothGattCallback {
 			}
 			writeCallback = null;
 			readCallback = null;
+			writeDescriptorCallback = null;
+			readDescriptorCallback = null;
 			retrieveServicesCallback = null;
 			readRSSICallback = null;
 			registerNotifyCallback = null;
@@ -388,16 +395,48 @@ public class Peripheral extends BluetoothGattCallback {
 	}
 
 	@Override
+  public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+    super.onDescriptorRead(gatt, descriptor, status);
+    Log.d(BleManager.LOG_TAG, "onDescriptorRead: " + descriptor);
+
+    if (status == BluetoothGatt.GATT_SUCCESS) {
+      byte[] dataValue = descriptor.getValue();
+
+      if (readDescriptorCallback != null) {
+        readDescriptorCallback.invoke(null, BleManager.bytesToWritableArray(dataValue));
+      }
+    } else {
+      readDescriptorCallback.invoke("Error reading " + descriptor.getUuid() + " status=" + status, null);
+    }
+
+    readDescriptorCallback = null;
+  }
+
+  @Override
 	public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
 		super.onDescriptorWrite(gatt, descriptor, status);
-		if (registerNotifyCallback != null) {
-			if (status == BluetoothGatt.GATT_SUCCESS) {
-				registerNotifyCallback.invoke();
-			} else {
-				registerNotifyCallback.invoke("Error writing descriptor stats=" + status, null);
-			}
 
-			registerNotifyCallback = null;
+		Log.d(BleManager.LOG_TAG, "onDescriptorWrite: " + descriptor.getUuid().toString());
+
+		if (descriptor.getUuid().equals(UUIDHelper.uuidFromString(CHARACTERISTIC_NOTIFICATION_CONFIG))) {
+			if (registerNotifyCallback != null) {
+				if (status == BluetoothGatt.GATT_SUCCESS) {
+					registerNotifyCallback.invoke();
+				} else {
+					registerNotifyCallback.invoke("Error writing descriptor stats=" + status, null);
+				}
+				registerNotifyCallback = null;
+			}
+		}
+		else {
+			if (writeDescriptorCallback != null) {
+				if (status == BluetoothGatt.GATT_SUCCESS) {
+					writeDescriptorCallback.invoke();
+				} else {
+					writeDescriptorCallback.invoke("Error writing descriptor stats=" + status, null);
+				}
+				writeDescriptorCallback = null;
+			}
 		}
 	}
 
@@ -427,6 +466,11 @@ public class Peripheral extends BluetoothGattCallback {
 			callback.invoke("BluetoothGatt is null");
 			return;
 		}
+
+    	if (registerNotifyCallback != null) {
+			callback.invoke("Cannot set notification, already writing descriptor");
+			return;
+    	}
 
 		BluetoothGattService service = gatt.getService(serviceUUID);
 		BluetoothGattCharacteristic characteristic = findNotifyCharacteristic(service, characteristicUUID);
@@ -538,6 +582,31 @@ public class Peripheral extends BluetoothGattCallback {
 		}
 	}
 
+	public void readDescriptor(UUID serviceUUID, UUID characteristicUUID, UUID descriptorUUID, Callback callback) {
+
+		if (!isConnected()) {
+			callback.invoke("Device is not connected", null);
+			return;
+		}
+		if (gatt == null) {
+			callback.invoke("BluetoothGatt is null", null);
+			return;
+		}
+
+		BluetoothGattService service = gatt.getService(serviceUUID);
+		BluetoothGattDescriptor descriptor = findReadableDescriptor(service, characteristicUUID, descriptorUUID);
+
+		if (descriptor == null) {
+			callback.invoke("Descriptor " + descriptorUUID + " not found.", null);
+		} else {
+			readDescriptorCallback = callback;
+			if (!gatt.readDescriptor(descriptor)) {
+				readDescriptorCallback = null;
+				callback.invoke("Read failed", null);
+			}
+		}
+	}
+
 	public void readRSSI(Callback callback) {
 		if (!isConnected()) {
 			callback.invoke("Device is not connected", null);
@@ -592,12 +661,47 @@ public class Peripheral extends BluetoothGattCallback {
 		return null;
 	}
 
+  private BluetoothGattDescriptor findReadableDescriptor(BluetoothGattService service, UUID characteristicUUID, UUID descriptorUUID) {
+
+    if (service == null) {
+      return null;
+    }
+
+    BluetoothGattCharacteristic characteristic = service.getCharacteristic(characteristicUUID);
+    if (characteristic == null)
+    {
+      return null;
+    }
+
+    List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();
+    for (BluetoothGattDescriptor descriptor : descriptors) {
+      if (((descriptor.getPermissions() & BluetoothGattDescriptor.PERMISSION_READ) != 0) && 
+          descriptorUUID.equals(descriptor.getUuid())) {
+        return descriptor;
+      }
+    }
+
+    // As a last resort, try and find ANY descriptor with this UUID, 
+    // even if it doesn't have the correct properties
+    return characteristic.getDescriptor(descriptorUUID);
+  }
+
 
 	public boolean doWrite(BluetoothGattCharacteristic characteristic, byte[] data) {
 		characteristic.setValue(data);
 
 		if (!gatt.writeCharacteristic(characteristic)) {
-			Log.d(BleManager.LOG_TAG, "Error on doWrite");
+			Log.d(BleManager.LOG_TAG, "Error on doWrite(characteristic)");
+			return false;
+		}
+		return true;
+	}
+
+	public boolean doWrite(BluetoothGattDescriptor descriptor, byte[] data) {
+    	descriptor.setValue(data);
+
+		if (!gatt.writeDescriptor(descriptor)) {
+			Log.d(BleManager.LOG_TAG, "Error on doWrite(descriptor)");
 			return false;
 		}
 		return true;
@@ -700,6 +804,89 @@ public class Peripheral extends BluetoothGattCallback {
 		}
 	}
 
+	public void writeDescriptor(UUID serviceUUID, UUID characteristicUUID, UUID descriptorUUID, byte[] data, Integer maxByteSize, Integer queueSleepTime, Callback callback) {
+
+		Log.d(BleManager.LOG_TAG, "writeDescriptor: descriptorUUID=" + descriptorUUID.toString());
+
+		if (!isConnected()) {
+			callback.invoke("Device is not connected", null);
+			return;
+		}
+
+		if (gatt == null) {
+			callback.invoke("BluetoothGatt is null");
+			return;
+		}
+
+		BluetoothGattService service = gatt.getService(serviceUUID);
+		BluetoothGattDescriptor descriptor = findWritableDescriptor(service, characteristicUUID, descriptorUUID);
+
+		if (descriptor == null) {
+			callback.invoke("Descriptor " + descriptorUUID + " not found.");
+			return;
+		}
+
+		if (writeQueue.size() > 0) {
+			callback.invoke("You have already an queued message");
+			return;
+		}
+
+		if (writeDescriptorCallback != null) {
+			callback.invoke("You're already writing descriptor");
+			return;
+		}
+
+		writeDescriptorCallback = callback;
+
+		if (data.length > maxByteSize) {
+			int dataLength = data.length;
+			int count = 0;
+			byte[] firstMessage = null;
+			List<byte[]> splittedMessage = new ArrayList<>();
+
+			while (count < dataLength && (dataLength - count > maxByteSize)) {
+				if (count == 0) {
+					firstMessage = Arrays.copyOfRange(data, count, count + maxByteSize);
+				} else {
+					byte[] splitMessage = Arrays.copyOfRange(data, count, count + maxByteSize);
+					splittedMessage.add(splitMessage);
+				}
+				count += maxByteSize;
+			}
+
+			if (count < dataLength) {
+				// Other bytes in queue
+				byte[] splitMessage = Arrays.copyOfRange(data, count, data.length);
+				splittedMessage.add(splitMessage);
+			}
+
+			try {
+				if (!doWrite(descriptor, firstMessage)) {
+					callback.invoke("Write failed");
+					writeDescriptorCallback = null;
+					return;
+				}
+				Thread.sleep(queueSleepTime);
+				for (byte[] message : splittedMessage) {
+					if (!doWrite(descriptor, message)) {
+						writeDescriptorCallback = null;
+						callback.invoke("Write failed");
+						return;
+					}
+					Thread.sleep(queueSleepTime);
+				}
+			} catch (InterruptedException e) {
+				callback.invoke("Error during writing");
+				writeDescriptorCallback = null;
+			}
+		} else if (doWrite(descriptor, data)) {
+			Log.d(BleManager.LOG_TAG, "doWrite completed");
+		} else {
+			callback.invoke("Write failed");
+			writeDescriptorCallback = null;
+		}
+	}
+
 	public void requestConnectionPriority(int connectionPriority, Callback callback) {
 		if (gatt == null) {
 			callback.invoke("BluetoothGatt is null", null);
@@ -768,6 +955,34 @@ public class Peripheral extends BluetoothGattCallback {
 			return service.getCharacteristic(characteristicUUID);
 		} catch (Exception e) {
 			Log.e(BleManager.LOG_TAG, "Error on findWritableCharacteristic", e);
+			return null;
+		}
+	}
+
+	private BluetoothGattDescriptor findWritableDescriptor(BluetoothGattService service, UUID characteristicUUID, UUID descriptorUUID) {
+		try {
+      if (service == null) {
+        return null;
+      }
+
+      BluetoothGattCharacteristic characteristic = service.getCharacteristic(characteristicUUID);
+      if (characteristic == null) {
+        return null;
+      }
+
+			int writePermission = BluetoothGattDescriptor.PERMISSION_WRITE;
+			List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();
+			for (BluetoothGattDescriptor descriptor : descriptors) {
+				if (((descriptor.getPermissions() & writePermission) != 0) && 
+            descriptorUUID.equals(descriptor.getUuid())) {
+					return descriptor;
+				}
+			}
+
+			// As a last resort, try and find ANY descriptor with this UUID, even if it doesn't have the correct permissions
+      return characteristic.getDescriptor(descriptorUUID);
+		} catch (Exception e) {
+			Log.e(BleManager.LOG_TAG, "Error on findWritableDescriptor", e);
 			return null;
 		}
 	}
